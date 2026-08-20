@@ -16,6 +16,7 @@ dependencies = [
     "pytesseract>=0.3.13",
     "torch>=2.11.0",
     "torchvision>=0.26.0",
+    "ultralytics>=8.4.121",
 ]
 
 [project.scripts]

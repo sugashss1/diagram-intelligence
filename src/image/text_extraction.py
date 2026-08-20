@@ -24,7 +24,7 @@ class ocr_paddle:
             )
     
 
-    def predict(self, img):
+    def predict(self, img:cv2.typing.MatLike):
         # PaddleOCR expects H x W x C
         if len(img.shape) == 2:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -59,7 +59,7 @@ class ocr_paddle:
         return data
 
 
-    def remove_text(self, img):
+    def remove_text(self, img:cv2.typing.MatLike):
         mask = np.zeros(img.shape[:2], dtype=np.uint8)
 
         data = self.predict(img)
@@ -73,11 +73,14 @@ class ocr_paddle:
         return cv2.inpaint(
             img,
             mask,
-            3,
+            1000,
             cv2.INPAINT_TELEA
         )
 
 
+#pytesseract 
+#
+#
 def text_extract(img:typing.MatLike) -> dict:
     data=image_to_data(img,output_type=pytesseract.Output.DATAFRAME)
     
@@ -152,11 +155,12 @@ def remove_text(img: typing.MatLike,data: dict) -> typing.MatLike:
     return result
 
 
+if __name__ == "__main__":
+    
+    img=preprocess.load("test/large.jpg")
+    j=ocr_paddle()
 
-img=preprocess.load("test/large.jpg")
-j=ocr_paddle()
-
-cv2.imwrite("out.png",j.remove_text(img))
+    cv2.imwrite("out.png",j.remove_text(img))
 
 
 # j=text_extract(img)

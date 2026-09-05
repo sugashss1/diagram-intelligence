@@ -1,4 +1,4 @@
-from image import preprocess
+from image import preprocess  # noqa: I001
 from cv2 import typing
 import cv2
 from pytesseract import image_to_data
@@ -6,12 +6,14 @@ import pytesseract
 import numpy as np
 import os
 import json
-# Must be set BEFORE importing Paddle/PaddleOCR
+
+# random env variables needed for paddleocr
+
 os.environ["FLAGS_enable_pir_api"] = "0"
 os.environ["FLAGS_use_mkldnn"] = "0"
 os.environ["PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"] = "0"
 
-from paddleocr import PaddleOCR
+from paddleocr import PaddleOCR  # noqa: I001
 
 class ocr_paddle:
     def __init__(self):
@@ -75,7 +77,7 @@ class ocr_paddle:
             mask,
             1000,
             cv2.INPAINT_TELEA
-        )
+        ),data
 
 
 #pytesseract 

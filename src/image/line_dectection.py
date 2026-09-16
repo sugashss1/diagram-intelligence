@@ -3,17 +3,13 @@ import numpy as np
 from skimage.morphology import skeletonize
 
 
-class line_detection_hough:
+class line_detection_lsd:
     def __init__(
         self,
-        threshold: int = 50,
-        min_line_length: int = 50,
-        max_line_gap: int = 30,
     ):
-        self.threshold = threshold
-        self.min_line_length = min_line_length
-        self.max_line_gap = max_line_gap
-        self.fld = cv2.ximgproc.createFastLineDetector()
+
+        self.lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
+        # self.lsd = cv2.ximgproc.createFastLineDetector(cv2.LSD_REFINE_STD)
 
     def predict(self, img: cv2.typing.MatLike):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -36,16 +32,12 @@ class line_detection_hough:
         if white_pixels > black_pixels:
             binary = cv2.bitwise_not(binary)
         
-        cv2.imshow("threshold",binary)
-        cv2.waitKey()
         # Skeletonize the filled regions
         skeleton = skeletonize(binary > 0)
         skeleton = (skeleton * 255).astype(np.uint8)
         
-        cv2.imshow("skeleton",skeleton)
-        cv2.waitKey()
         
-        return self.fld.detect(skeleton).astype(int)
+        return self.lsd.detect(skeleton)[0].astype(int)
         
         # return cv2.HoughLinesP(
         #     skeleton,
@@ -67,19 +59,8 @@ class line_detection_hough:
             lines = self.predict(img)
             lines_was_none=True
 
-        output = np.zeros_like(img)
-        print(lines)
-        if lines is not None:
-            for x1, y1, x2, y2 in lines[:, 0]:
-                cv2.line(
-                    output,
-                    (x1, y1),
-                    (x2, y2),
-                    (255, 255, 255),
-                    2,
-                )
-        
+        self.lsd.drawSegments(img,lines)
         if lines_was_none:
-            return output,lines
+            return img,lines
 
-        return output
+        return img

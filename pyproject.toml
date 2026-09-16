@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "kagglehub>=1.0.2",
+    "opencv-contrib-python>=4.10.0.84",
     "opencv-python>=5.0.0.93",
     "paddleocr[all,doc-parser]>=3.7.0",
     "paddlepaddle>=3.3.1",

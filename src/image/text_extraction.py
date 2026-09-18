@@ -158,14 +158,17 @@ def remove_text(img: typing.MatLike,data: dict) -> typing.MatLike:
 
 
 if __name__ == "__main__":
-    
+    print("running test")
+    print("Preprocessing image...")
     img=preprocess.load("test/large.jpg")
+    print("Extracting text...")
     j=ocr_paddle()
-
-    cv2.imwrite("out.png",j.remove_text(img))
+    cv2.imwrite("output/text_extraction/images/bounding.png",draw_ocr(img,j.predict(img)))
+    print("Removing text...")
+    cv2.imwrite("output/text_extraction/images/out.png",j.remove_text(img)[0])
 
 
 # j=text_extract(img)
-# cv2.imwrite("bounding.png",draw_ocr(img,j))
-# cv2.imwrite("out.png",remove_text(img,j))
+# cv2.imwrite("output/text_extraction/images/bounding.png",draw_ocr(img,j))
+# cv2.imwrite("output/text_extraction/images/out.png",remove_text(img,j))
     

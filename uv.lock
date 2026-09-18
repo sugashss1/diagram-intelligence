@@ -727,10 +727,12 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "kagglehub" },
+    { name = "opencv-contrib-python" },
     { name = "opencv-python" },
     { name = "paddleocr", extra = ["all", "doc-parser"] },
     { name = "paddlepaddle" },
     { name = "pandas" },
+    { name = "pylsd" },
     { name = "pytesseract" },
     { name = "scikit-image" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
@@ -743,10 +745,12 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "kagglehub", specifier = ">=1.0.2" },
+    { name = "opencv-contrib-python", specifier = ">=4.10.0.84" },
     { name = "opencv-python", specifier = ">=5.0.0.93" },
     { name = "paddleocr", extras = ["all", "doc-parser"], specifier = ">=3.7.0" },
     { name = "paddlepaddle", specifier = ">=3.3.1" },
     { name = "pandas", specifier = ">=3.0.5" },
+    { name = "pylsd", specifier = ">=0.0.2" },
     { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "scikit-image", specifier = ">=0.26.0" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.11.0" },
@@ -2858,6 +2862,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/68/ca/31c57507b13119d7d
 wheels = [
     { url = "https://files.pythonhosted.org/packages/30/a4/2bffa9f8e804325a09867f0e9d30795c80ea9f8d62560bd1b6ad6220eb2f/pydantic_settings-2.15.0-py3-none-any.whl", hash = "sha256:0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42", size = 69413, upload-time = "2026-08-07T09:24:55.839Z" },
 ]
+
+[[package]]
+name = "pylsd"
+version = "0.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/ac/128158438742944b170ebf81ec6d913df382387f782f87b0ca4bc51b291c/pylsd-0.0.2.tar.gz", hash = "sha256:eee1a43a1be20ebc99f392ade199608975d96af26bdb06c4dcbb3b845ea68a40", size = 44906, upload-time = "2017-02-06T03:53:45.572Z" }
 
 [[package]]
 name = "pyparsing"

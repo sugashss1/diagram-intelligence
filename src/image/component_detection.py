@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+from pathlib import Path
+import shutil
 from ultralytics import YOLO
 
 
@@ -52,10 +54,30 @@ class yolo_component_detection:
         result=self.predict(img)[0]
         boxes = result.boxes
         background_color = np.median(img.reshape(-1, 3), axis=0).astype(np.uint8)
-        
+
+        temporary_dir = Path("output") / "components temp"
+        if temporary_dir.exists():
+            shutil.rmtree(temporary_dir)
+        temporary_dir.mkdir(parents=True, exist_ok=True)
+        preserved_classes = {"crossover", "terminal", "terminals"}
+        removed_index = 0
+
         for box in boxes:
+            class_id = int(box.cls[0])
+            class_name = str(result.names[class_id]).strip().lower()
+            if class_name in preserved_classes:
+                continue
+
             x1, y1, x2, y2 = map(int, box.xyxy[0])
+            x1 = max(0, min(x1, img.shape[1]))
+            y1 = max(0, min(y1, img.shape[0]))
+            x2 = max(x1, min(x2, img.shape[1]))
+            y2 = max(y1, min(y2, img.shape[0]))
+            component = img[y1:y2, x1:x2].copy()
+            component_path = temporary_dir / f"{removed_index:04d}_{class_name}.png"
+            cv2.imwrite(str(component_path), component)
             img[y1:y2, x1:x2]=background_color
+            removed_index += 1
         
         return img,result
 

@@ -20,6 +20,10 @@ image, texts = paddle_ocr.remove_text(image.copy())
 cv2.imwrite(str(output_dir / "text_removed.png"), image)
 
 yolo = component_detection.yolo_component_detection("best.pt")
+cv2.imwrite(
+	str(output_dir / "components_bounding_boxes.png"),
+	yolo.draw_yolo(image.copy()),
+)
 image, components = yolo.remove_components(image.copy())
 cv2.imwrite(str(output_dir / "components_removed.png"), image)
 

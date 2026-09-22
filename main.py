@@ -15,10 +15,6 @@ image = preprocess.load(str(input_path))
 if image is None or image.size == 0:
 	raise FileNotFoundError(f"Could not load image: {input_path}")
 
-paddle_ocr = text_extraction.ocr_paddle()
-image, texts = paddle_ocr.remove_text(image.copy())
-cv2.imwrite(str(output_dir / "text_removed.png"), image)
-
 yolo = component_detection.yolo_component_detection("best.pt")
 cv2.imwrite(
 	str(output_dir / "components_bounding_boxes.png"),
@@ -26,6 +22,10 @@ cv2.imwrite(
 )
 image, components = yolo.remove_components(image.copy())
 cv2.imwrite(str(output_dir / "components_removed.png"), image)
+
+paddle_ocr = text_extraction.ocr_paddle()
+image, texts = paddle_ocr.remove_text(image.copy())
+cv2.imwrite(str(output_dir / "text_removed.png"), image)
 
 line_detector = line_detection.line_detection_lsd()
 raw_lines = line_detector.predict(image)

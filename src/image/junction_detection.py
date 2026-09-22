@@ -2,6 +2,7 @@ from itertools import combinations
 
 import numpy as np
 import pandas as pd
+import cv2
 
 
 def point_segment_distance(point, segment):
@@ -99,3 +100,22 @@ def classify_junctions(segments, radius=10, angle_tolerance=18):
     return pd.DataFrame(rows, columns=["x", "y", "type", "degree"]).drop_duplicates(
         subset=["x", "y", "type"]
     )
+
+def draw_junction(img,lines):
+    junctions = classify_junctions(lines)
+    junction_image = img
+    colors = {"L": (255, 0, 0), "T": (0, 165, 255), "+": (0, 255, 0)}
+    for row in junctions.itertuples():
+        center = (round(row.x), round(row.y))
+        color = colors[row.type]
+        cv2.circle(junction_image, center, 7, color, -1)
+        cv2.putText(
+            junction_image,
+            row.type,
+            (center[0] + 8, center[1] + 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            color,
+            2,
+        )
+    return junction_image,junctions

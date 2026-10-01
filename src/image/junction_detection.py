@@ -1,8 +1,8 @@
 from itertools import combinations
 
+import cv2
 import numpy as np
 import pandas as pd
-import cv2
 
 
 def point_segment_distance(point, segment):
@@ -47,7 +47,7 @@ def classify_junctions(segments, radius=10, angle_tolerance=18):
     """Classify segment nodes as L, T, or + junctions."""
     segments = np.asarray(segments, dtype=np.float32).reshape(-1, 4)
     if len(segments) == 0:
-        return pd.DataFrame(columns=["x", "y", "type", "degree"])
+        return pd.DataFrame(columns=["x", "y", "type", "degree", "segment_indices"])
 
     candidates = [point for segment in segments for point in (segment[:2], segment[2:])]
     candidates += [
@@ -59,18 +59,23 @@ def classify_junctions(segments, radius=10, angle_tolerance=18):
     rows = []
     for node in cluster_points(candidates, radius):
         rays = []
-        for segment in segments:
+        segment_indices = set()
+        for index, segment in enumerate(segments):
             distance, parameter = point_segment_distance(node, segment)
             if distance > radius:
                 continue
 
             start, end = segment[:2], segment[2:]
-            if 0.08 < parameter < 0.92:
+            #parameter denotes where the junction is in the segment
+
+            if 0.08 < parameter < 0.92: #middle of segment
                 vectors = [start - node, end - node]
-            elif parameter <= 0.92:
+            elif parameter <= 0.08: # left of segment
                 vectors = [end - node]
-            else:
+            else: #right of segment
                 vectors = [start - node]
+            
+            segment_added = False
 
             for vector in vectors:
                 if np.linalg.norm(vector) <= 2:
@@ -81,6 +86,10 @@ def classify_junctions(segments, radius=10, angle_tolerance=18):
                     for other in rays
                 ):
                     rays.append(angle)
+                    segment_added=True
+            
+            if segment_added:
+                segment_indices.add(index)
 
         degree = len(rays)
         if degree >= 4:
@@ -95,9 +104,9 @@ def classify_junctions(segments, radius=10, angle_tolerance=18):
         else:
             continue
 
-        rows.append({"x": node[0], "y": node[1], "type": junction_type, "degree": degree})
+        rows.append({"x": node[0], "y": node[1], "type": junction_type, "degree": degree,"segment_indices": sorted(segment_indices),})
 
-    return pd.DataFrame(rows, columns=["x", "y", "type", "degree"]).drop_duplicates(
+    return pd.DataFrame(rows, columns=["x", "y", "type", "degree", "segment_indices"]).drop_duplicates(
         subset=["x", "y", "type"]
     )
 

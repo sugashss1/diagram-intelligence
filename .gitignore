@@ -1,4 +1,6 @@
 output/
+yolo26*.pt
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

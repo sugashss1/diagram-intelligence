@@ -65,10 +65,9 @@ class line_detection_lsd:
         if lines_was_none:
             lines = self.predict(img)
 
-        draw_lines = np.asarray(lines, dtype=np.float32).reshape(-1, 1, 4)
         canvas = img.copy()
-        if len(draw_lines) > 0:
-            self.lsd.drawSegments(canvas, draw_lines)
+        if len(lines) > 0:
+            self.lsd.drawSegments(canvas, lines)
         if lines_was_none:
             return canvas, lines
         return canvas

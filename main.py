@@ -5,6 +5,7 @@ import pandas as pd
 
 from image import component_detection, line_detection, preprocess, text_extraction
 from image.junction_detection import draw_junction
+from text import netlist_generation
 
 input_path = Path("test/full-adder-circuit.png")
 output_dir = Path("output")
@@ -23,7 +24,7 @@ cv2.imwrite(
 
 image, components = yolo.remove_components(image)
 cv2.imwrite(str(output_dir / "components_removed.png"), image)
-
+    
 paddle_ocr = text_extraction.ocr_paddle()
 image, texts = paddle_ocr.remove_text(image)
 cv2.imwrite(str(output_dir / "text_removed.png"), image)
@@ -55,3 +56,17 @@ print(f"Input: {input_path}")
 print(f"Raw lines: {len(raw_lines)}")
 print(f"Merged lines: {len(merged_lines)}")
 print(f"Junctions: {len(junctions)}")
+
+
+nl = netlist_generation.netlist(
+    ocr_data=texts,
+    components_result=components,
+    lines=merged_lines,
+    junctions=junctions,
+)
+
+for c in nl.components:
+    print(c.name, c.coor, c.near_text)
+
+for i in nl.lines:
+    print(i.__dict__)

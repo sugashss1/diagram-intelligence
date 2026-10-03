@@ -1,7 +1,8 @@
+import shutil
+from pathlib import Path
+
 import cv2
 import numpy as np
-from pathlib import Path
-import shutil
 from ultralytics import YOLO
 
 

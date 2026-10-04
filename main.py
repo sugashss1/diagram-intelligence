@@ -2,6 +2,7 @@ from pathlib import Path
 
 import cv2
 import pandas as pd
+import numpy as np
 
 from image import component_detection, line_detection, preprocess, text_extraction
 from image.junction_detection import draw_junction
@@ -64,9 +65,14 @@ nl = netlist_generation.netlist(
     lines=merged_lines,
     junctions=junctions,
 )
+zero_image =np.zeros_like(image)
+nl.draw(zero_image)
 
-for c in nl.components:
-    print(c.name, c.coor, c.near_text)
+cv2.imwrite(str(output_dir/"netlist_generation.png"),zero_image)
 
-for i in nl.lines:
-    print(i.__dict__)
+# for c in nl.components:
+#     print(c.name, c.coor, c.near_text)
+#     for(i in )
+#
+# for i in nl.lines:
+#     print(i.__dict__)

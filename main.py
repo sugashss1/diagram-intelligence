@@ -8,7 +8,7 @@ from image import component_detection, line_detection, preprocess, text_extracti
 from image.junction_detection import draw_junction
 from text import netlist_generation
 
-input_path = Path("test/full-adder-circuit.png")
+input_path = Path("test/logic_circuit.png")
 output_dir = Path("output")
 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -60,6 +60,7 @@ print(f"Junctions: {len(junctions)}")
 
 
 nl = netlist_generation.netlist(
+    image=image,
     ocr_data=texts,
     components_result=components,
     lines=merged_lines,

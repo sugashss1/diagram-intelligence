@@ -10,7 +10,7 @@ from image.junction_detection import draw_junction
 from text import netlist_generation
 
 if len(sys.argv) < 2:
-    input_path = Path("test/logic_circuit.png")
+    input_path = Path("test/full-adder-circuit.png")
 else:
     input_path=Path(sys.argv[1])
 
@@ -73,6 +73,11 @@ nl = netlist_generation.netlist(
 )
 zero_image =np.zeros_like(image)
 nl.draw(zero_image)
+
+print("Mermaid graph")
+print("-------------")
+print(nl.mermaid_text)
+print("-------------")
 
 cv2.imwrite(str(output_dir/"netlist_generation.png"),zero_image)
 

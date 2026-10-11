@@ -44,7 +44,7 @@ class netlist:
         self.lines=self.merge_via_junctions(junctions)
         self.attach_text(ocr_data)
         self.attach_segments_and_components()
-        print(self.to_mermaid())
+        self.mermaid_text=self.to_mermaid()
 
     def attach_text(self, ocr_data, max_dist=None):
         """Attach each OCR text from paddleOCR's output to its nearest component."""

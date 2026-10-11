@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -745,7 +745,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "kagglehub", specifier = ">=1.0.2" },
-    { name = "opencv-contrib-python", specifier = ">=4.10.0.84" },
+    { name = "opencv-contrib-python", specifier = "==4.10.0.84" },
     { name = "opencv-python", specifier = ">=5.0.0.93" },
     { name = "paddleocr", extras = ["all", "doc-parser"], specifier = ">=3.7.0" },
     { name = "paddlepaddle", specifier = ">=3.3.1" },
@@ -759,6 +759,9 @@ requires-dist = [
     { name = "torchvision", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=0.26.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "ultralytics", specifier = ">=8.4.121" },
 ]
+
+[package.metadata.requires-dev]
+dev = []
 
 [[package]]
 name = "fonttools"

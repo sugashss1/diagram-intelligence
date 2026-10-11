@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 import cv2
 import pandas as pd
@@ -8,7 +9,11 @@ from image import component_detection, line_detection, preprocess, text_extracti
 from image.junction_detection import draw_junction
 from text import netlist_generation
 
-input_path = Path("test/logic_circuit.png")
+if len(sys.argv) < 2:
+    input_path = Path("test/logic_circuit.png")
+else:
+    input_path=Path(sys.argv[1])
+
 output_dir = Path("output")
 output_dir.mkdir(parents=True, exist_ok=True)
 

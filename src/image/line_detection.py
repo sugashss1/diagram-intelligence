@@ -43,7 +43,10 @@ class line_detection_lsd:
         lines = self.lsd.detect(skeleton)[0]
         if lines is None:
             return np.empty((0, 4), dtype=np.float32)
-        return lines[:, 0, :].astype(np.float32)
+        
+        if lines.ndim == 3:
+            lines = lines[:, 0, :]
+        return lines.astype(np.float32)
         
         # return cv2.HoughLinesP(
         #     skeleton,

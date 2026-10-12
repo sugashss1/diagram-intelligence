@@ -745,7 +745,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "kagglehub", specifier = ">=1.0.2" },
-    { name = "opencv-contrib-python", specifier = "==4.10.0.84" },
+    { name = "opencv-contrib-python", specifier = ">=4.10.0.84" },
     { name = "opencv-python", specifier = ">=5.0.0.93" },
     { name = "paddleocr", extras = ["all", "doc-parser"], specifier = ">=3.7.0" },
     { name = "paddlepaddle", specifier = ">=3.3.1" },

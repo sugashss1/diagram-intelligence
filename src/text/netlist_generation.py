@@ -257,7 +257,7 @@ class netlist:
         ys = [p[1] for p in seg.endpoints]
         return (sum(xs) / len(xs), sum(ys) / len(ys))  # centre of the net
 
-    def to_mermaid(self, direction="LR", show_text=False, show_dangling=False):
+    def to_mermaid(self, direction="LR", show_text=False):
         def esc(s):
             return str(s).replace('"', "'")
 
@@ -288,14 +288,6 @@ class netlist:
                 out.append(f'    {j}(("{esc(net_label)}"))')
                 for c_id in ids:
                     out.append(f"    {j} --- {c_id}")
-            elif show_dangling:
-                j = f"n{i}"
-                out.append(f'    {j}(("{esc(net_label)}")):::dangling')
-                for c_id in ids:
-                    out.append(f"    {j} -.- {c_id}")
-
-        if show_dangling:
-            out.append("    classDef dangling stroke-dasharray:4 3,stroke:#999")
 
         return "\n".join(out)
 

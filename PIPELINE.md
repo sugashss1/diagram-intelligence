@@ -1,377 +1,367 @@
 # Diagram Intelligence Pipeline
 
-This document describes the current diagram-processing pipeline in this repository (as of 9/18/26 1.21 pm). The pipeline takes a circuit or engineering diagram image, removes visual elements that should not be interpreted as wiring, detects text and components, detects line segments from the cleaned image, merges fragmented segments, and classifies junctions.
+This document reflects the pipeline that is actually implemented in this repository today. The source of truth is the orchestration in `main.py`, plus the image and text modules under `src/image`.
 
-## Pipeline At A Glance
+## Pipeline at a glance
 
 ```mermaid
 flowchart TD
     A[Input image] --> B[preprocess.load]
-    B --> C[ocr_paddle.predict]
+    B --> C[yolo_component_detection.remove_components]
     C --> D[ocr_paddle.remove_text]
-    D --> E[yolo_component_detection.predict]
-    E --> F[yolo_component_detection.remove_components]
-    F --> G[line_detection.detect_lines]
-    G --> H[line_detection.merge_detector_segments]
-    H --> I[line_detection.classify_junctions]
-    I --> J[CSV files and overlay image]
+    D --> E[line_detection_lsd.predict]
+    E --> F[merge_segments]
+    F --> G[classify_junctions / draw_junction]
+    G --> I[circuit_json.build_circuit_json]
+    I --> J[connectivity_recovery VLM / conservative crossover fallback]
+    J --> K[build_topology + white-canvas reconstruction]
+    K --> L[Canonical JSON + JSON-derived netlist + Mermaid]
+    L --> M[Optional hybrid-retrieval VQA]
 ```
 
-The intended order is important:
+The real execution order in `main.py` is:
 
-1. Load the original image.
-2. Detect and remove text so character strokes are not mistaken for wires.
-3. Detect and remove diagram components so component outlines are not mistaken for wire segments.
-4. Detect lines on the remaining image.
-5. Merge fragmented detections that represent one physical wire.
-6. Classify nodes where wires meet.
-7. Save machine-readable results and a visual overlay for inspection.
+1. Load the source image.
+2. Run YOLO component detection and remove detected non-terminal components from the image.
+3. Run PaddleOCR text extraction and remove OCR text from the image.
+4. Detect line segments on the cleaned image.
+5. Merge nearby fragments into longer candidate wires.
+6. Cluster detected endpoints/intersections into junctions.
+7. Create canonical JSON containing components, wires, terminals, OCR labels, ports, and reviewable `+` crossings.
+8. Use a confidence-gated VLM review for `+` crossings; unclear, failed, missing, or low-confidence decisions become conservative crossover assumptions, so no unsupported wire merge is introduced.
+9. Build electrical nets, render the JSON-only white-canvas reconstruction, and emit a netlist plus Mermaid derived solely from the corrected canonical JSON.
+10. When the user supplies a question, retrieve only from the local `knowledge_base/` folder and send the retrieved context, graph, and original image to the VLM.
 
-The line stage is deliberately independent of OCR and YOLO implementation details. It accepts the image returned by the preceding cleaning stages. This makes it compatible with the current pipeline while avoiding unnecessary imports of PaddleOCR and Ultralytics in the line detector.
+This order differs from the earlier design doc: the current code runs component removal before OCR cleanup, and the junction logic lives in `src/image/junction_detection.py` instead of a single `line_detection.py` entry point.
 
-## Repository Locations
+## Repository locations
 
 | Stage | Location | Main API |
 |---|---|---|
-| Image loading | [`src/image/preprocess.py`](src/image/preprocess.py) | `read_grayscale`, `load` |
-| PaddleOCR text detection/removal | [`src/image/text_extraction.py`](src/image/text_extraction.py) | `ocr_paddle.predict`, `ocr_paddle.remove_text` |
-| YOLO component detection/removal | [`src/image/component_detection.py`](src/image/component_detection.py) | `yolo_component_detection.predict`, `yolo_component_detection.remove_components` |
-| OpenCV line and junction stage | [`src/image/line_detection.py`](src/image/line_detection.py) | `run_line_detection` and helper functions |
-| Experiment notebook | [`src/image/line_detection.ipynb`](src/image/line_detection.ipynb) | Detector comparison and parameter experiments |
-| Generated line outputs | [`output/line detection`](output/line%20detection) | CSV and PNG artifacts |
+| Image loading | `src/image/preprocess.py` | `load`, `read_grayscale` |
+| YOLO component detection | `src/image/component_detection.py` | `yolo_component_detection.predict`, `draw_yolo`, `remove_components` |
+| OCR text cleanup | `src/image/text_extraction.py` | `ocr_paddle.predict`, `ocr_paddle.remove_text` |
+| Line detection | `src/image/line_detection.py` | `line_detection_lsd.predict`, `draw_lines`, `merge_segments` |
+| Junction classification | `src/image/junction_detection.py` | `classify_junctions`, `segment_intersection`, `cluster_points`, `draw_junction` |
+| Canonical JSON / topology / renderer | `src/text/circuit_json.py` | `build_circuit_json`, `build_topology`, `topology_to_netlist`, `topology_to_mermaid`, `render_reconstructed_circuit` |
+| Crossover recovery | `src/image/connectivity_recovery.py` | `build_review_candidates`, `review_candidates_with_vlm`, `apply_review_decisions` |
+| Hybrid local retrieval | `src/retrieval/knowledge_base.py` | `build_or_load_index`, `HybridRetriever` |
+| Multimodal VQA | `src/retrieval/vqa.py` | `answer_circuit_question` |
+| Offline evaluation only | `src/evaluation/reconstruction_evaluation.py` | `evaluate_reconstruction`, `summarise_evaluation` |
+| Orchestration entry point | `main.py` | `main` script |
 
-The module path is `image.line_detection` when the `src` directory is on the Python path, matching the existing imports such as `from image import preprocess`.
+## Stage 1: load the image
 
-## Stage 1: Image Loading
+### `preprocess.load(path)`
 
-### `read_grayscale(path)`
+Definition: `src/image/preprocess.py`
 
-**Definition:** `src/image/preprocess.py`, function `read_grayscale`.
+Purpose:
+- Validate the file path.
+- Call `cv2.imread(path)`.
+- Return an empty `(0, 0)` uint8 array if the file cannot be read.
 
-**Purpose:** Check whether a path exists and load it with OpenCV.
+Current behavior:
+- `read_grayscale()` does not actually request grayscale; it calls `cv2.imread(path)` with the default BGR behavior.
+- There is no resize, thresholding, denoising, or normalization in the current implementation.
+- The commented-out threshold block shows where additional preprocessing could be added later.
 
-**Usage:** Called internally by `preprocess.load(path)`.
-
-**Input:** A filesystem path as a string.
-
-**Output:** The OpenCV image returned by `cv2.imread`, or `None` when OpenCV cannot read the file.
-
-**Important implementation detail:** Despite its name, the current function calls `cv2.imread(path)` without `cv2.IMREAD_GRAYSCALE`, so it normally returns a three-channel BGR image. The line stage accepts either BGR or single-channel images and converts BGR to grayscale before detection.
-
-### `load(path)`
-
-**Definition:** `src/image/preprocess.py`, function `load`.
-
-**Purpose:** Provide the pipeline's loading boundary and return an image even when loading fails.
-
-**Usage:**
+Example:
 
 ```python
 from image import preprocess
 
-image = preprocess.load("path/to/diagram.png")
+image = preprocess.load("test/full-adder-circuit.png")
+if image.size == 0:
+    raise FileNotFoundError("Could not load image")
 ```
 
-**Output:** A loaded OpenCV image, or an empty `uint8` array with shape `(0, 0)` when loading fails. Callers should validate the result before sending it to OCR or detection.
+## Stage 2: component detection and removal
 
-**Current preprocessing behavior:** The function currently does not threshold, denoise, resize, or normalize the image. The commented threshold operation shows where additional preprocessing could be introduced later.
+### `yolo_component_detection`
 
-## Stage 2: Text Detection And Removal
+Definition: `src/image/component_detection.py`
 
-### `ocr_paddle.__init__()`
+What it does:
+- Loads a YOLO model from a checkpoint path in `__init__`.
+- Runs inference with `self.model(img)` in `predict()`.
+- Draws bounding boxes in `draw_yolo()`.
+- Removes detected regions in `remove_components()`.
 
-**Definition:** `src/image/text_extraction.py`, class `ocr_paddle`.
+The current implementation preserves only these classes as wiring-related:
+- `crossover`
+- `terminal`
+- `terminals`
 
-**Purpose:** Initialize PaddleOCR with document orientation, unwarping, and text-line orientation disabled. The environment variables above the import disable PaddlePaddle settings that are problematic for this project environment.
+Everything else is replaced with the median background color of the image. The removed crop is saved under `output/components temp/` for inspection, with filenames like `0000_resistor.png`.
 
-**Usage:**
+Example:
+
+```python
+from image import component_detection
+
+model = component_detection.yolo_component_detection("best.pt")
+image, result = model.remove_components(image)
+```
+
+Important note:
+- `remove_components()` mutates the input image in place.
+- If you need the original cleaned image later, pass `image.copy()`.
+
+## Stage 3: OCR text removal
+
+### `ocr_paddle`
+
+Definition: `src/image/text_extraction.py`
+
+What it does:
+- Initializes PaddleOCR in `__init__`.
+- Runs `self.ocr.predict(img)` in `predict()`.
+- Saves the OCR JSON result to `output` when available.
+- Filters out recognized text containing `ww`, because the current project treats those as likely resistor artifacts.
+- Builds a mask from every OCR box and inpaints the region with `cv2.inpaint(..., cv2.INPAINT_TELEA)` in `remove_text()`.
+
+The OCR output is returned as a dictionary with a `res` object. The important fields are:
+- `data["res"]["rec_boxes"]`
+- `data["res"]["rec_texts"]`
+
+Example:
 
 ```python
 from image.text_extraction import ocr_paddle
 
 ocr = ocr_paddle()
+image, ocr_data = ocr.remove_text(image)
 ```
 
-### `ocr_paddle.predict(img)`
+The Tesseract functions (`text_extract`, `draw_ocr`, `remove_text`) are present as alternate/legacy utilities, but the active pipeline uses the PaddleOCR class path.
 
-**Definition:** `src/image/text_extraction.py`, method `ocr_paddle.predict`.
+## Stage 4: line detection
 
-**Purpose:** Run PaddleOCR and return its structured result. Grayscale input is converted to BGR because PaddleOCR expects an H x W x C image.
+### `line_detection_lsd`
 
-**Processing details:**
+Definition: `src/image/line_detection.py`
 
-- Calls `self.ocr.predict(img)`.
-- Saves PaddleOCR JSON output to `output` using PaddleOCR's `save_to_json` method.
-- Reads the result JSON when PaddleOCR returns it as a string.
-- Extracts `res.rec_boxes` and `res.rec_texts`.
-- Removes detections whose text contains `ww`, because the current project treats those detections as likely resistor artifacts rather than useful text.
+This is the active detector implementation used by `main.py`.
 
-**Output:** A dictionary containing a `res` object. The important field for removal is `data["res"]["rec_boxes"]`, where each box is represented as `[x1, y1, x2, y2]`.
+Key methods:
+- `predict(img)`: detects raw line segments.
+- `draw_lines(img, lines=None)`: renders detected segments for debugging.
 
-### `ocr_paddle.remove_text(img)`
+Behavior:
+- Converts BGR images to grayscale if needed.
+- Thresholds the image with Otsu.
+- Inverts if the background is white and the foreground is dark.
+- Skeletonizes the binary result.
+- Calls `cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)`.
+- Returns a NumPy array shaped `(N, 4)` where each row is `[x0, y0, x1, y1]`.
 
-**Definition:** `src/image/text_extraction.py`, method `ocr_paddle.remove_text`.
+### `merge_segments`
 
-**Purpose:** Convert OCR bounding boxes into a binary mask and reconstruct those regions with OpenCV Telea inpainting.
+Definition: `src/image/line_detection.py`
 
-**Usage:**
+Purpose:
+- Merge nearby fragments that belong to the same physical wire.
+- Compare angle, midpoint offset, and gap tolerance.
+- Rebuild a longer segment spanning the combined projection range.
+
+Current criteria:
+- Direction difference within 5 degrees.
+- Perpendicular midpoint offset within 7 pixels.
+- Projected gap within 14 pixels.
+
+This function is the actual merge pass used before junction classification.
+
+Example:
 
 ```python
-cleaned_text_image, ocr_data = ocr.remove_text(image)
+from image import line_detection
+
+line_detector = line_detection.line_detection_lsd()
+raw_lines = line_detector.predict(image)
+merged_lines = line_detection.merge_segments(raw_lines)
 ```
 
-**Processing details:**
+## Stage 5: junction detection
 
-- Creates a zero-valued mask with the same height and width as the image.
-- Marks every OCR rectangle as 255.
-- Calls `cv2.inpaint(img, mask, 1000, cv2.INPAINT_TELEA)`.
-- Returns both the text-cleaned image and OCR data.
+### `classify_junctions`
 
-**Output:** `(cleaned_image, ocr_data)`. The cleaned image is the input to component detection. The OCR data can be retained for later semantic interpretation.
+Definition: `src/image/junction_detection.py`
 
-### Alternative Tesseract functions
+Purpose:
+- Treat segment endpoints and pairwise intersections as candidate node positions.
+- Cluster nearby points within a radius.
+- Measure rays from each node to nearby segment ends/interior points.
+- Group nearly collinear rays.
+- Classify the node as `L`, `T`, or `+`.
 
-The same file also defines `text_extract(img)`, `draw_ocr(img, data)`, and `remove_text(img, data)` for a Tesseract DataFrame-based path. These functions are not required by the PaddleOCR path above. The Tesseract remover expands each box by two pixels and uses an inpaint radius of five, while the PaddleOCR class currently uses its own box handling and inpaint radius of 1000.
+The function returns a Pandas DataFrame with columns:
+- `x`
+- `y`
+- `type`
+- `degree`
+- `segment_indices`
 
-## Stage 3: Component Detection And Removal
-
-### `yolo_component_detection.__init__(path)`
-
-**Definition:** `src/image/component_detection.py`, class `yolo_component_detection`.
-
-**Purpose:** Load the trained Ultralytics YOLO model from a checkpoint path.
-
-**Usage:**
+Example:
 
 ```python
-from image.component_detection import yolo_component_detection
+from image.junction_detection import classify_junctions
 
-components = yolo_component_detection("best.pt")
+junctions = classify_junctions(merged_lines)
 ```
 
-### `yolo_component_detection.predict(img)`
+### `draw_junction`
 
-**Definition:** `src/image/component_detection.py`, method `yolo_component_detection.predict`.
+Definition: `src/image/junction_detection.py`
 
-**Purpose:** Run the YOLO model on an image and return Ultralytics result objects.
+Purpose:
+- Draw junction markers on the image.
+- Use blue for `L`, orange for `T`, and green for `+`.
+- Annotate the type next to each node.
 
-**Output:** A list-like Ultralytics result collection. The first result, `self.predict(img)[0]`, contains the detected bounding boxes.
+This is the visualization pass used by `main.py` to generate `output/junctions.png`.
 
-### `yolo_component_detection.draw_yolo(img)`
+## Stage 6: canonical circuit JSON and topology
 
-**Definition:** `src/image/component_detection.py`, method `yolo_component_detection.draw_yolo`.
+`src/text/circuit_json.py` converts detector, OCR, wire, and junction outputs into a portable JSON document. It contains component boxes, wire geometry, terminal attachments, OCR records, inferred external ports, endpoint connections, and incidence matrices.
 
-**Purpose:** Create a visual diagnostic image by drawing each predicted component rectangle, class label, and confidence.
+Important connectivity rule:
 
-**Pipeline role:** This is a visualization helper. It does not remove components and should be used on a copy of an image when the original pixels must be preserved.
+- `L` and `T` junctions are initially confirmed geometric connections.
+- A `+` is recorded as `intersection_or_crossover` and is **not** made an electrical connection until review confirms it.
 
-### `yolo_component_detection.remove_components(img)`
+`build_topology()` unions wires only through `confirmed_connected` junctions. Both a confirmed crossover and an uncertain `assumed_crossover` stay electrically separate. `topology_to_netlist()` and `topology_to_mermaid()` consume this corrected topology; there is no pre-JSON netlist path in `main.py`. `render_reconstructed_circuit()` draws the JSON geometry on a white canvas with grey wires, magenta component boxes, terminal markers, ports, and colour-coded junction status.
 
-**Definition:** `src/image/component_detection.py`, method `yolo_component_detection.remove_components`.
+Artifacts under `output/connectivity/`:
 
-**Purpose:** Hide detected component regions before line detection while preserving crossover and terminal symbols because they represent wiring topology.
+- `canonical_circuit_before_review.json`
+- `candidate_connectivity_records.json`
+- `canonical_circuit.json`
+- `circuit_topology.json`
+- `canonical_netlist.json`
+- `canonical_netlist.txt`
+- `canonical_topology.mmd`
+- `mermaid_topology.png`
+- `reconstructed_circuit.png`
 
-**Processing details:**
+## Stage 7: connectivity recovery
 
-- Runs YOLO prediction.
-- Computes the per-channel median of the image as a background color.
-- Preserves detections whose normalized class name is `crossover`, `terminal`, or `terminals`.
-- Flushes `output/components temp/` at the start of every run so crops belong only to the latest run.
-- Copies every other detected component crop to `output/components temp/`.
-- Replaces every other detected `[x1, y1, x2, y2]` region with that background color.
+`src/image/connectivity_recovery.py` creates a full-context and native-crop review board for every ambiguous `+`. It asks the configured Llama 3.2 Vision Instruct endpoint for strict JSON containing the junction ID, decision, confidence, and visual evidence.
 
-**Usage:**
+- A filled central dot can produce `connected_intersection`.
+- A plain crossing or bridge can produce `crossover`.
+- Only a decision at confidence `>= 0.80` changes topology.
+- Missing credentials, malformed output, timeouts, and lower-confidence output become an auditable `assumed_crossover`; this conservative choice never invents a connection.
+
+The endpoint defaults to NVIDIA's OpenAI-compatible URL and uses `NVIDIA_API_KEY` (or `NVAPI_KEY`), `NVIDIA_INVOKE_URL`, and `NVIDIA_VLM_MODEL` when configured.
+
+## Stage 8: local knowledge retrieval and VQA
+
+Place PDFs, manuals, JSON/Markdown symbol libraries, and rule documents only under `knowledge_base/`. `src/retrieval/knowledge_base.py` recursively indexes this folder, extracting PDF, DOCX, JSON, Markdown, text, CSV, and YAML content. It fuses BM25 keyword scores with deterministic TF-IDF cosine-vector scores.
+
+For `--question`, `src/retrieval/vqa.py` supplies the VLM with:
+
+1. The user question.
+2. The original circuit image.
+3. Canonical topology Mermaid and JSON summary.
+4. The top hybrid-retrieved knowledge chunks with source filenames.
+
+It returns general text and saves an auditable `output/vqa_response.json`. If the remote VLM times out or is unavailable, it instead saves `output/vqa_error.json` and preserves every completed circuit-recovery artifact. No web corpus or files outside the selected local knowledge-base folder are indexed.
+
+`src/evaluation/` is intentionally not called by `main.py`; it is reserved for offline research evaluation.
+
+## End-to-end execution in this repo
+
+The actual orchestration is the `main.py` entry point:
 
 ```python
-line_input, yolo_result = components.remove_components(cleaned_text_image)
+from image import component_detection, line_detection, preprocess, text_extraction
+from image.junction_detection import draw_junction
+from text.circuit_json import build_circuit_json, build_topology, topology_to_mermaid, topology_to_netlist
+
+image = preprocess.load(str(input_path))
+if image is None or image.size == 0:
+    raise FileNotFoundError(f"Could not load image: {input_path}")
+
+yolo = component_detection.yolo_component_detection("best.pt")
+image, components = yolo.remove_components(image)
+
+paddle_ocr = text_extraction.ocr_paddle()
+image, texts = paddle_ocr.remove_text(image)
+
+line_detector = line_detection.line_detection_lsd()
+raw_lines = line_detector.predict(image)
+merged_lines = line_detection.merge_segments(raw_lines)
+
+junction_image, junctions = draw_junction(image.copy(), merged_lines)
+
+circuit = build_circuit_json(input_path, source_image, components, merged_lines, junctions, texts)
+topology = build_topology(circuit)
+netlist = topology_to_netlist(circuit, topology)
+mermaid = topology_to_mermaid(circuit, topology)
 ```
 
-**Output:** `(image_without_components, yolo_result)`. The first item is the image passed to `run_line_detection`.
+The current `main.py` additionally reuses the detector result for component drawing/removal, writes canonical JSON, runs the confidence-gated crossing-review stage, builds topology, and renders `reconstructed_circuit.png`. The complete source is the authoritative reference for CLI options and progress messages.
 
-**Mutation note:** The function writes directly into the supplied image array. Pass a copy when the text-cleaned image must also be retained:
+## Output artifacts
 
-```python
-line_input, yolo_result = components.remove_components(cleaned_text_image.copy())
-```
+When `main.py` runs, it writes images and CSVs into `output/`:
 
-Removed component crops are named with a zero-padded index and class, for example `0000_and.png`. The temporary folder is created relative to the current working directory and is intended for inspection during a pipeline run.
+- `components_bounding_boxes.png`
+- `components_removed.png`
+- `text_removed.png`
+- `lines_raw.png`
+- `lines_merged.png`
+- `junctions.png`
+- `lines_raw.csv`
+- `lines_merged.csv`
+- `junctions.csv`
+- `connectivity/canonical_circuit.json`
+- `connectivity/circuit_topology.json`
+- `connectivity/canonical_netlist.json`
+- `connectivity/canonical_netlist.txt`
+- `connectivity/canonical_topology.mmd`
+- `connectivity/reconstructed_circuit.png`
 
-## Stage 4: Line Detection And Junction Classification
+The project also creates a temporary component crop directory at `output/components temp/` during YOLO removal.
 
-The implementation is in [`src/image/line_detection.py`](src/image/line_detection.py). The selected detector is OpenCV Fast Line Detector (FLD), with OpenCV LSD as a compatibility fallback when `cv2.ximgproc.createFastLineDetector` is unavailable. This choice matches the experimental notebook decision.
+## CLI usage
 
-### `as_segments(value)`
-
-**Definition:** `src/image/line_detection.py`, function `as_segments`.
-
-**Purpose:** Normalize the different OpenCV detector output shapes into a consistent `N x 4` NumPy array.
-
-**Output contract:** Each row is `[x0, y0, x1, y1]` with `float32` values. `None` becomes an empty `(0, 4)` array.
-
-### `detect_lines(image, detector="fld")`
-
-**Definition:** `src/image/line_detection.py`, function `detect_lines`.
-
-**Purpose:** Detect raw line segments from the component- and text-cleaned image.
-
-**Processing details:**
-
-- Validates that the image is not empty.
-- Accepts either BGR or grayscale input.
-- Converts BGR input to grayscale.
-- Uses `cv2.ximgproc.createFastLineDetector()` for `detector="fld"` when available.
-- Uses `cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)` for LSD fallback or `detector="lsd"`.
-
-**Output:** `(detector_name, raw_segments)`, for example `("opencv_fld", array)`.
-
-### `segment_geometry(segment)`
-
-**Definition:** `src/image/line_detection.py`, function `segment_geometry`.
-
-**Purpose:** Calculate the geometric basis used during merging.
-2. A perpendicular normal vector.
-3. The segment midpoint.
-
-
-**Definition:** `src/image/line_detection.py`, function `merge_detector_segments`.
-
-**Purpose:** Convert fragmented detector output into longer physical line candidates.
-
-**Merge criteria:** Two segments merge when all of these conditions hold:
-
-- Their direction angle differs by at most five degrees.
-- Their perpendicular midpoint offset is at most seven pixels.
-- Their projected gap along the current line direction is at most fourteen pixels.
-
-The algorithm repeatedly absorbs compatible pending segments, projects endpoints onto the current direction, and rebuilds one segment spanning the combined projection range. It processes one detector's output at a time; FLD and LSD results are never combined.
-
-### `point_segment_distance(point, segment)`
-
-**Definition:** `src/image/line_detection.py`, function `point_segment_distance`.
-
-**Purpose:** Determine whether a candidate node lies close enough to a segment to contribute a ray.
-
-**Output:** `(distance, parameter)`, where `parameter` is clamped to `[0, 1]` and identifies whether the node is near an endpoint or in the interior.
-
-### `segment_intersection(first, second)`
-
-**Definition:** `src/image/line_detection.py`, function `segment_intersection`.
-
-**Purpose:** Find crossing points between finite, non-parallel segments. Intersections are added to the node candidates so junctions can be classified even when a detector segment crosses another segment away from its endpoints.
-
-**Output:** An intersection coordinate or `None` for parallel/non-intersecting segments. A small parameter tolerance of `0.03` allows near-endpoint intersections to survive rasterization error.
-
-### `cluster_points(points, radius=10)`
-
-### `classify_junctions(segments, radius=10, angle_tolerance=18)`
-
-**Definition:** `src/image/line_detection.py`, function `classify_junctions`.
-
-**Purpose:** Convert merged lines into junction records.
-
-**Processing details:**
-
-- Uses all segment endpoints and pairwise intersections as node candidates.
-- Clusters candidates within ten pixels.
-- Finds rays from each node to nearby segment ends or interior points.
-- Treats rays within eighteen degrees as the same direction.
-- Counts the remaining unique directions.
-
-**Classification rules:**
-
-- Four or more rays: `+` junction.
-- Exactly three rays: `T` junction.
-- Exactly two rays separated by 45 to 135 degrees: `L` junction.
-- Two nearly collinear rays and one-ray nodes are discarded.
-
-**Output:** A pandas DataFrame with columns `x`, `y`, `type`, and `degree`.
-
-### `draw_detection_overlay(image, segments, junctions)`
-
-**Definition:** `src/image/line_detection.py`, function `draw_detection_overlay`.
-
-**Purpose:** Produce a visual diagnostic image.
-
-**Rendering:** Merged segments are red. L junctions are blue, T junctions are orange, and `+` junctions are green. The junction type is written beside each marker.
-
-### `save_detection_results(output_dir, detector_name, raw_segments, merged_segments, junctions, overlay)`
-
-**Definition:** `src/image/line_detection.py`, function `save_detection_results`.
-
-**Purpose:** Persist the line-stage outputs for downstream graph construction, evaluation, and visual inspection.
-
-**Files written:**
-
-- `<detector>_raw_segments.csv`: detector output before merging.
-- `<detector>_merged_segments.csv`: merged line candidates.
-- `<detector>_junctions.csv`: junction coordinates, type, and degree.
-- `<detector>_merged_junctions.png`: annotated overlay.
-- `selected_detector_comparison.csv`: one-row count summary.
-
-### `run_line_detection(image, output_dir=None, detector="fld")`
-- `overlay`: annotated OpenCV image.
-- `paths`: saved artifact paths, or an empty dictionary when no output directory was requested.
-
-## End-To-End In-Memory Usage
-
-```python
-from image import preprocess
-from image.component_detection import yolo_component_detection
-from image.line_detection import run_line_detection
-from image.text_extraction import ocr_paddle
-
-source = preprocess.load("test/large.jpg")
-if source.size == 0:
-    raise FileNotFoundError("Could not load the input diagram")
-
-ocr = ocr_paddle()
-without_text, ocr_data = ocr.remove_text(source)
-
-components = yolo_component_detection("best.pt")
-without_components, yolo_data = components.remove_components(without_text.copy())
-
-line_result = run_line_detection(
-    without_components,
-    output_dir="output/line detection",
-    detector="fld",
-)
-
-print(line_result["junctions"])
-```
-
-The `ocr_data` and `yolo_data` objects remain available for later association of detected wires with labels and components. The line stage does not discard those upstream results.
-
-## Direct Command-Line Usage
-
-The line module can also run on an already cleaned image:
+The current repository does not expose a `python -m image.line_detection` CLI in the final code path. The main entry point is the project script:
 
 ```powershell
-python -m image.line_detection out.png --output-dir "output/line detection" --detector fld
+python main.py "test/full-adder-circuit.png"
 ```
 
-The CLI reads the image in grayscale, runs the same public orchestration function, prints counts and junction records, and writes the same artifacts as the in-memory API. Run it from a repository environment where `src` is on `PYTHONPATH`, or use the project's configured editable environment.
+If no argument is provided, `main.py` defaults to `test/full-adder-circuit.png`.
 
-## Data Flow And Contracts
+To run only local deterministic stages and conservatively resolve all ambiguous `+` crossings as crossovers:
 
-| Boundary | Input | Output |
-|---|---|---|
-| `preprocess.load` | image path | OpenCV image |
-| `ocr_paddle.remove_text` | OpenCV image | cleaned image plus OCR dictionary |
-| `remove_components` | cleaned OpenCV image | component-free image plus YOLO result |
-| `detect_lines` | component-free image | detector name plus `N x 4` segments |
-| `merge_detector_segments` | raw segments | merged `M x 4` segments |
-| `classify_junctions` | merged segments | `x`, `y`, `type`, `degree` DataFrame |
-| `run_line_detection` | component-free image | complete result dictionary |
+```powershell
+python main.py "test/full-adder-circuit.png" --skip-vlm-review
+```
 
-The coordinate system is the original image coordinate system: `x` increases to the right and `y` increases downward. Segment CSV coordinates and junction coordinates use pixels in that same system.
+To ask a knowledge-grounded question after reconstruction:
 
-## Design Decisions And Limitations
+```powershell
+python main.py "test/full-adder-circuit.png" --question "What does this circuit do?"
+```
 
-- FLD is the selected detector because it was included in the experimental comparison and produced the same 52 raw segments as LSD on the evaluated image.
-- LSD fallback keeps the module usable with standard OpenCV installations that do not expose `cv2.ximgproc`.
-- Merging is detector-local. Combining multiple detector outputs would duplicate lines and bias junction degree counts.
-- Junction classification is geometric, not electrical. A `+` record means four or more geometric rays were observed; it does not prove that the source diagram indicates an electrical connection.
-- OCR and YOLO model quality directly affects line quality because text and component pixels must be removed before line detection.
-- `component_detection.py` currently replaces YOLO boxes with a median color and mutates its input array. Passing `.copy()` at the integration boundary preserves the prior cleaned image.
-- The current `preprocess.load` name suggests grayscale loading but returns the default OpenCV BGR result. `line_detection.detect_lines` handles both representations.
-- The current line stage is ready to provide geometric primitives for a later graph-building stage, where endpoints and junctions can become graph nodes and merged segments can become graph edges.
+The second command reads only from `knowledge_base/`. Use `--rebuild-knowledge-index` after adding or changing its files.
+
+## Summary
+
+The current pipeline is a pragmatic, code-first workflow that matches the implementation in this repository:
+
+- `preprocess.load()` reads the image.
+- `yolo_component_detection.remove_components()` strips non-terminal components.
+- `ocr_paddle.remove_text()` removes OCR text.
+- `line_detection_lsd.predict()` extracts raw wire segments.
+- `merge_segments()` merges fragmented wires.
+- `classify_junctions()` identifies wiring intersections.
+- `circuit_json.build_circuit_json()` preserves the structured representation.
+- `connectivity_recovery` accepts only confidence-qualified electrical intersections and conservatively treats all other `+` cases as crossovers.
+- `build_topology()`, `topology_to_netlist()`, `topology_to_mermaid()`, and `render_reconstructed_circuit()` produce the graph outputs and white-canvas reconstruction from corrected canonical JSON.
+- Optional VQA combines the original image, recovered graph, and hybrid retrieval over local knowledge-base materials.
+
+The earlier document describing a separate `run_line_detection` API and a unified `line_detection.detect_lines` wrapper is not consistent with the actual code in this branch.

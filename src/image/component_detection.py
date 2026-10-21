@@ -13,11 +13,12 @@ class yolo_component_detection:
     def predict(self,img:cv2.typing.MatLike):
         return self.model(img)
 
-    def draw_yolo(self,img: cv2.typing.MatLike) -> cv2.typing.MatLike:
+    def draw_yolo(self,img: cv2.typing.MatLike, result=None) -> cv2.typing.MatLike:
         """
         Draw YOLO detections on an image.
         """
-        result=self.predict(img)[0]
+        if result is None:
+            result = self.predict(img)[0]
         boxes = result.boxes
         for box in boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -50,9 +51,14 @@ class yolo_component_detection:
             )
         return img
     
-    def remove_components(self,img: cv2.typing.MatLike):
+    def remove_components(self,img: cv2.typing.MatLike, result=None):
+        """Remove detected non-terminal components from ``img``.
 
-        result=self.predict(img)[0]
+        ``result`` may be a previously computed Ultralytics result. Supplying it
+        avoids an otherwise redundant second detector invocation in the pipeline.
+        """
+        if result is None:
+            result = self.predict(img)[0]
         boxes = result.boxes
         background_color = np.median(img.reshape(-1, 3), axis=0).astype(np.uint8)
 

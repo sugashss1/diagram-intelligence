@@ -5,6 +5,11 @@ production flow: perception, canonical JSON, confidence-gated connectivity
 recovery, topology/white-canvas reconstruction, and optional multimodal RAG VQA.
 """
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
 import argparse
 import json
 import sys
@@ -175,9 +180,12 @@ def run_pipeline(args):
         "junctions": len(circuit["junctions"]),
         "ambiguous_candidates": len(candidates),
         "topology_nets": len(topology["nets"]),
-        "vqa_answered": bool(vqa_response and "answer" in vqa_response),
         "output_dir": str(output_dir.resolve()),
+        "vqa_answered": bool(vqa_response and "answer" in vqa_response),
     }
+    if bool(vqa_response and "answer" in vqa_response):
+        summary["output"]=vqa_response["answer"]
+
     _stage(f"Complete. Artifacts written to: {summary['output_dir']}")
     return summary
 

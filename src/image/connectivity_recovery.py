@@ -17,7 +17,7 @@ from urllib import error, request
 import cv2
 
 
-DEFAULT_MODEL = "meta/llama-3.2-90b-vision-instruct"
+DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct"
 DEFAULT_INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 VALID_DECISIONS = {"connected_intersection", "crossover", "unclear"}
 
@@ -115,7 +115,7 @@ def render_review_board(image, candidate, output_path, crop_radius_px=90):
     """Create a full-context + native-resolution crop board for a crossing."""
     if image is None or image.size == 0:
         raise ValueError("A non-empty source image is required for a review board.")
-    point = tuple(int(round(value)) for value in candidate["point"])
+    point = tuple(round(value) for value in candidate["point"])
     overview = image.copy()
     cv2.circle(overview, point, 18, (0, 0, 255), 3, cv2.LINE_AA)
     cv2.putText(

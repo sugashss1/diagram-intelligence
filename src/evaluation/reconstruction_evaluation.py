@@ -18,7 +18,7 @@ from text.circuit_json import topology_to_mermaid, validate_circuit
 def _raster_lines(lines, image_shape, thickness=2):
     mask = np.zeros(image_shape[:2], dtype=np.uint8)
     for line in lines or []:
-        x1, y1, x2, y2 = (int(round(float(value))) for value in line)
+        x1, y1, x2, y2 = (round(float(value)) for value in line)
         cv2.line(mask, (x1, y1), (x2, y2), 255, thickness, cv2.LINE_AA)
     return mask
 

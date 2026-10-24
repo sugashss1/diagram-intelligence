@@ -1,5 +1,5 @@
 """Multimodal RAG question answering over a recovered circuit."""
-
+from openai import OpenAI
 import base64
 import json
 import os
@@ -18,15 +18,21 @@ def _image_part(path):
 
 
 def _post_json(url, api_key, payload, timeout_seconds):
-    http_request = request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json", "Content-Type": "application/json"},
-        method="POST",
+    client = OpenAI(
+    base_url = "https://integrate.api.nvidia.com/v1",
+    api_key = api_key
     )
-    with request.urlopen(http_request, timeout=timeout_seconds) as response:
-        return json.loads(response.read().decode("utf-8"))
 
+    completion = client.chat.completions.create(
+    model="z-ai/glm-5.3-flash",
+    messages=payload["messages"],
+    temperature=1,
+    top_p=0.95,
+    max_tokens=262144,
+    stream=False
+    )
+
+    return completion
 
 def _response_text(payload):
     content = payload["choices"][0]["message"]["content"]
@@ -64,24 +70,25 @@ def answer_circuit_question(
     context = "\n\n".join(f"[Source: {item['source']}]\n{item['text']}" for item in retrieved)
     prompt = f"""You are an engineering-diagram assistant. Answer the user using the circuit image, the recovered graph, and retrieved engineering knowledge.
 
-User question:
-{question}
+    User question:
+    {question}
 
-Recovered Mermaid graph:
-```mermaid
-{mermaid}```
+    Recovered Mermaid graph:
+    ```mermaid
+    {mermaid}```
 
-Canonical topology summary:
-{json.dumps(topology, ensure_ascii=False)}
+    Canonical topology summary:
+    {json.dumps(topology, ensure_ascii=False)}
 
-Retrieved knowledge:
-{context or '[No matching knowledge-base passages were retrieved.]'}
+    Retrieved knowledge:
+    {context or '[No matching knowledge-base passages were retrieved.]'}
 
-Requirements:
-- Distinguish directly observed diagram facts from inferences.
-- State when unresolved crossings or incomplete recovery make an answer uncertain.
-- Do not claim electrical correctness solely from internal graph consistency.
-- Give a concise general-text answer with source filenames when knowledge-base evidence is used."""
+    Requirements:
+    - Distinguish directly observed diagram facts from inferences.
+    - State when unresolved crossings or incomplete recovery make an answer uncertain.
+    - Do not claim electrical correctness solely from internal graph consistency.
+    - Give a concise general-text answer with source filenames when knowledge-base evidence is used."""
+
     payload = {
         "model": model_name,
         "temperature": 0.2,
@@ -92,7 +99,7 @@ Requirements:
     }
     try:
         response = _post_json(invoke_url, api_key, payload, timeout_seconds)
-        answer = _response_text(response)
+        answer = response.choices[0].message.content
     except (OSError, KeyError, ValueError, error.URLError, error.HTTPError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"VQA invocation failed: {exc}") from exc
     return {"question": question, "answer": answer, "model": model_name, "retrieved_sources": retrieved, "mermaid": mermaid}

@@ -207,7 +207,7 @@ class netlist:
                 if seg not in nearest.connected:
                     nearest.connected.append(seg)
     
-    def draw(self, image, show_text=False,show_segments_name=False):
+    def draw(self, image, show_text=False,show_segments_name=True):
         """Draw segments (endpoints + index + name), components (center + name), and a
         line from each segment to every component it is connected to.
         Each segment gets its own colour. Returns the annotated image."""
@@ -225,9 +225,8 @@ class netlist:
 
             # segment name at the centre of ALL endpoints
             if show_segments_name and pts:
-                mid = (sum(p[0] for p in pts) // len(pts),
-                    sum(p[1] for p in pts) // len(pts))
-                cv2.putText(image, f"s{seg.name}", mid, font, 0.4, color, 1, cv2.LINE_AA)
+                above = (pts[0][0]+30,pts[0][1])
+                cv2.putText(image, f"s{seg.name}", above, font, 0.4, color, 1, cv2.LINE_AA)
 
             # line from segment -> connected components (same colour as the segment)
             for comp in seg.components or []:

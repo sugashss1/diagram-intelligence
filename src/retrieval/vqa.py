@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from urllib import error, request
 
-from image.connectivity_recovery import DEFAULT_INVOKE_URL, DEFAULT_MODEL
+from image.connectivity_recovery import DEFAULT_INVOKE_URL, DEFAULT_MODEL,post_json
 from text.circuit_json import topology_to_mermaid
 
 
@@ -17,22 +17,51 @@ def _image_part(path):
     return {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{data}"}}
 
 
-def _post_json(url, api_key, payload, timeout_seconds):
-    client = OpenAI(
-    base_url = "https://integrate.api.nvidia.com/v1",
-    api_key = api_key
-    )
 
-    completion = client.chat.completions.create(
-    model="z-ai/glm-5.3-flash",
-    messages=payload["messages"],
-    temperature=1,
-    top_p=0.95,
-    max_tokens=262144,
-    stream=False
-    )
+def invoke_gemini(messages, timeout_seconds=100):
+    try:
+        client = OpenAI(
+            api_key=os.getenv("gemini_api"),
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            timeout=timeout_seconds,
+            max_retries=1,
+        )
 
-    return completion
+        response = client.chat.completions.create(
+            model="gemini-3.5-flash-lite",
+            messages=messages,
+            max_tokens=8192,
+        )
+
+        return response.choices[0].message.content
+    except Exception as e:
+        print(e)
+        raise RuntimeError("Gemini API request failed")
+
+def _post_to_vlm(url, api_key, payload, timeout_seconds):
+    try:
+        client = OpenAI(
+        base_url = "https://integrate.api.nvidia.com/v1",
+        api_key = api_key
+        )
+        
+        completion = client.chat.completions.create(
+        model="z-ai/glm-5.3-flash",
+        messages=payload["messages"],
+        temperature=1,
+        top_p=0.95,
+        max_tokens=262144,
+        stream=False,
+        timeout=timeout_seconds
+        )
+
+        return completion.choices[0].message.content
+    except Exception as e:
+        print(f"GLM 5.3 request failed: {e}")
+        print("Falling back to HTTP request...")
+
+        return _response_text(post_json(url, api_key, payload, timeout_seconds))
+
 
 def _response_text(payload):
     content = payload["choices"][0]["message"]["content"]
@@ -51,7 +80,7 @@ def answer_circuit_question(
     invoke_url=None,
     model_name=None,
     top_k=5,
-    timeout_seconds=180,
+    timeout_seconds=30,
 ):
     """Answer a user question using the original image, JSON graph, and retrieved KB text."""
     if not str(question).strip():
@@ -98,8 +127,7 @@ def answer_circuit_question(
         "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}, _image_part(image_path)]}],
     }
     try:
-        response = _post_json(invoke_url, api_key, payload, timeout_seconds)
-        answer = response.choices[0].message.content
+        answer = invoke_gemini(payload["messages"])
     except (OSError, KeyError, ValueError, error.URLError, error.HTTPError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"VQA invocation failed: {exc}") from exc
     return {"question": question, "answer": answer, "model": model_name, "retrieved_sources": retrieved, "mermaid": mermaid}

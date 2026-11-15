@@ -185,7 +185,9 @@ def run_pipeline(args):
     }
     if bool(vqa_response and "answer" in vqa_response):
         print("VLM output:")
+        print("------------------------------------------------")
         print(vqa_response["answer"])
+        print("------------------------------------------------")
 
     _stage(f"Complete. Artifacts written to: {summary['output_dir']}")
     return summary

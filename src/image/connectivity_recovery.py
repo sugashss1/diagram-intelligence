@@ -180,7 +180,7 @@ Rules:
 }}"""
 
 
-def _post_json(url, api_key, payload, timeout_seconds):
+def post_json(url, api_key, payload, timeout_seconds):
     data = json.dumps(payload).encode("utf-8")
     http_request = request.Request(
         url,
@@ -240,7 +240,7 @@ def review_candidates_with_vlm(
             "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}, _image_part(board_path)]}],
         }
         try:
-            raw = _post_json(invoke_url, api_key, payload, timeout_seconds)
+            raw = post_json(invoke_url, api_key, payload, timeout_seconds)
             raw_path.write_text(raw, encoding="utf-8")
             response_payload = json.loads(raw)
             decision_payload = _extract_json_object(_read_response_content(response_payload))
